@@ -34,7 +34,7 @@ import de.robv.android.xposed.XposedInit;
 public class LoadedApkCtorHooker extends XC_MethodHook {
 
     @Override
-    protected void afterHookedMethod(MethodHookParam param) {
+    protected void afterHookedMethod(MethodHookParam<?> param) {
         Hookers.logD("LoadedApk#<init> starts");
 
         try {
@@ -54,12 +54,6 @@ public class LoadedApkCtorHooker extends XC_MethodHook {
                 } else {
                     packageName = "system";
                 }
-            }
-
-            // mIncludeCode checking should go ahead of loadedPackagesInProcess added checking
-            if (!XposedHelpers.getBooleanField(loadedApk, "mIncludeCode")) {
-                Hookers.logD("LoadedApk#<init> mIncludeCode == false: " + mAppDir);
-                return;
             }
 
             if (!XposedInit.loadedPackagesInProcess.add(packageName)) {

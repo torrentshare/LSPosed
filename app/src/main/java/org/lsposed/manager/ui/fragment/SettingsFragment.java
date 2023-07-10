@@ -33,6 +33,7 @@ import androidx.activity.result.ActivityResultLauncher;
 import androidx.activity.result.contract.ActivityResultContracts;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
+import androidx.appcompat.app.AppCompatDelegate;
 import androidx.core.text.HtmlCompat;
 import androidx.preference.Preference;
 import androidx.preference.PreferenceFragmentCompat;
@@ -59,7 +60,6 @@ import java.util.ArrayList;
 import java.util.Locale;
 
 import rikka.core.util.ResourceUtils;
-import rikka.material.app.DayNightDelegate;
 import rikka.material.app.LocaleDelegate;
 import rikka.material.preference.MaterialSwitchPreference;
 import rikka.preference.SimpleMenuPreference;
@@ -135,6 +135,25 @@ public class SettingsFragment extends BaseFragment {
         }
 
         @Override
+        public void onResume() {
+            super.onResume();
+            MaterialSwitchPreference notificationPreference = findPreference("enable_status_notification");
+            if (notificationPreference != null && notificationPreference.isVisible()) {
+                setNotificationPreferenceEnabled(notificationPreference, ShortcutUtil.isLaunchShortcutPinned());
+            }
+        }
+
+        private void setNotificationPreferenceEnabled(MaterialSwitchPreference notificationPreference, boolean enabled) {
+            if (notificationPreference != null) {
+                notificationPreference.setEnabled(!ConfigManager.enableStatusNotification() || enabled);
+                notificationPreference.setSummaryOn(enabled ?
+                        notificationPreference.getContext().getString(R.string.settings_enable_status_notification_summary) :
+                        notificationPreference.getContext().getString(R.string.settings_enable_status_notification_summary) + "\n" +
+                                notificationPreference.getContext().getString(R.string.disable_status_notification_error));
+            }
+        }
+
+        @Override
         public void onCreatePreferences(Bundle savedInstanceState, String rootKey) {
             final String SYSTEM = "SYSTEM";
 
@@ -153,46 +172,45 @@ public class SettingsFragment extends BaseFragment {
                 prefDexObfuscate.setEnabled(installed);
                 prefDexObfuscate.setChecked(!installed || ConfigManager.isDexObfuscateEnabled());
                 prefDexObfuscate.setOnPreferenceChangeListener((preference, newValue) -> {
-                    parentFragment.showHint(R.string.reboot_required, true, R.string.reboot, v -> ConfigManager.reboot(false));
+                    parentFragment.showHint(R.string.reboot_required, true, R.string.reboot, v -> ConfigManager.reboot());
                     return ConfigManager.setDexObfuscateEnabled((boolean) newValue);
                 });
             }
 
-            MaterialSwitchPreference notification = findPreference("enable_status_notification");
-            if (notification != null) {
-                if (App.isParasitic() && !ShortcutUtil.isLaunchShortcutPinned()) {
-                    var s = notification.getContext().getString(R.string.disable_status_notification_error);
-                    notification.setSummaryOn(notification.getSummary() + "\n" + s);
-                    notification.setEnabled(false);
-                } else {
-                    notification.setEnabled(installed);
+            MaterialSwitchPreference notificationPreference = findPreference("enable_status_notification");
+            if (notificationPreference != null) {
+                if (App.isParasitic && !ShortcutUtil.isLaunchShortcutPinned()) {
+                    setNotificationPreferenceEnabled(notificationPreference, false);
                 }
-                notification.setChecked(installed && ConfigManager.enableStatusNotification());
-                notification.setOnPreferenceChangeListener((p, v) ->
-                        ConfigManager.setEnableStatusNotification((boolean) v)
-                );
+                notificationPreference.setVisible(installed);
+                notificationPreference.setChecked(installed && ConfigManager.enableStatusNotification());
+                notificationPreference.setOnPreferenceChangeListener((p, v) -> {
+                    if ((boolean) v && App.isParasitic && !ShortcutUtil.isLaunchShortcutPinned()) {
+                        setNotificationPreferenceEnabled(notificationPreference, false);
+                    }
+                    return ConfigManager.setEnableStatusNotification((boolean) v);
+                });
             }
 
             Preference shortcut = findPreference("add_shortcut");
             if (shortcut != null) {
-                shortcut.setVisible(App.isParasitic() && ShortcutUtil.isRequestPinShortcutSupported(requireContext()));
-                if (ShortcutUtil.isLaunchShortcutPinned()) {
+                shortcut.setEnabled(ShortcutUtil.shouldAllowPinShortcut(requireContext()));
+                shortcut.setVisible(App.isParasitic);
+                if (!ShortcutUtil.isRequestPinShortcutSupported(requireContext())) {
                     shortcut.setEnabled(false);
+                    shortcut.setSummary(R.string.settings_unsupported_pin_shortcut_summary);
+                } else if (!ShortcutUtil.shouldAllowPinShortcut(requireContext()))
                     shortcut.setSummary(R.string.settings_created_shortcut_summary);
-                } else {
-                    shortcut.setEnabled(true);
-                    shortcut.setSummary(R.string.settings_create_shortcut_summary);
-                }
                 shortcut.setOnPreferenceClickListener(preference -> {
-                    ShortcutUtil.requestPinLaunchShortcut(() -> {
+                    if (!ShortcutUtil.requestPinLaunchShortcut(() -> {
                         shortcut.setEnabled(false);
                         shortcut.setSummary(R.string.settings_created_shortcut_summary);
-                        if (notification != null) {
-                            notification.setEnabled(true);
-                            notification.setSummaryOn(R.string.settings_enable_status_notification_summary);
-                        }
+                        setNotificationPreferenceEnabled(notificationPreference, true);
                         App.getPreferences().edit().putBoolean("never_show_welcome", true).apply();
-                    });
+                        parentFragment.showHint(R.string.settings_shortcut_pinned_hint, false);
+                    })) {
+                        parentFragment.showHint(R.string.settings_unsupported_pin_shortcut_summary, true);
+                    }
                     return true;
                 });
             }
@@ -230,11 +248,7 @@ public class SettingsFragment extends BaseFragment {
             if (theme != null) {
                 theme.setOnPreferenceChangeListener((preference, newValue) -> {
                     if (!App.getPreferences().getString("dark_theme", ThemeUtil.MODE_NIGHT_FOLLOW_SYSTEM).equals(newValue)) {
-                        DayNightDelegate.setDefaultNightMode(ThemeUtil.getDarkTheme((String) newValue));
-                        MainActivity activity = (MainActivity) getActivity();
-                        if (activity != null) {
-                            activity.restart();
-                        }
+                        AppCompatDelegate.setDefaultNightMode(ThemeUtil.getDarkTheme((String) newValue));
                     }
                     return true;
                 });
