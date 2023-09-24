@@ -1,7 +1,17 @@
 name: Core
 
 on:
+  workflow_dispatch:
+    inputs:
+      post_telegram:
+        description: 'Post to Telegram'
+        required: true
+        type: boolean
+  push:
+    branches: [ master ]
+    tags: [ v* ]
   pull_request:
+  merge_group:
 
 jobs:
   build:
@@ -29,7 +39,6 @@ jobs:
             echo androidStoreFile='key.jks' >> gradle.properties
             echo ${{ secrets.KEY_STORE }} | base64 --decode > key.jks
           fi
-
       - name: Checkout libxposed/api
         uses: actions/checkout@v3
         with:
@@ -72,11 +81,9 @@ jobs:
           ./gradlew publishToMavenLocal
           cd ../service
           ./gradlew publishToMavenLocal
-
       - name: Build with Gradle
         run: |
           ./gradlew zipAll
-
       - name: Prepare artifact
         if: success()
         id: prepareArtifact
@@ -89,7 +96,6 @@ jobs:
           unzip magisk-loader/release/LSPosed-v*-riru-debug.zip -d LSPosed-riru-debug
           unzip magisk-loader/release/LSPosed-v*-zygisk-release.zip -d LSPosed-zygisk-release
           unzip magisk-loader/release/LSPosed-v*-zygisk-debug.zip -d LSPosed-zygisk-debug
-
       - name: Upload riru release
         uses: actions/upload-artifact@v3
         with:
@@ -121,7 +127,6 @@ jobs:
           path: |
             magisk-loader/build/outputs/mapping
             app/build/outputs/mapping
-
       - name: Upload symbols
         uses: actions/upload-artifact@v3
         with:
